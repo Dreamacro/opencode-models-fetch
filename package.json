@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "opencode-models-fetch",
+  "version": "0.1.0",
+  "description": "OpenCode plugin for discovering models.dev-compatible provider models",
+  "keywords": [
+    "model-discovery",
+    "models.dev",
+    "opencode",
+    "plugin"
+  ],
+  "homepage": "https://github.com/Dreamacro/opencode-models-fetch#readme",
+  "bugs": {
+    "url": "https://github.com/Dreamacro/opencode-models-fetch/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dreamacro/opencode-models-fetch.git"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "hooks:install": "lefthook install",
+    "lint": "oxlint --deny-warnings src test",
+    "lint:fix": "oxlint --fix src test",
+    "prepublishOnly": "pnpm validate",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.9",
+    "@types/node": "^26.1.2",
+    "lefthook": "^2.1.10",
+    "oxfmt": "^0.61.0",
+    "oxlint": "^1.76.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.17.10"
+  },
+  "engines": {
+    "node": ">=20",
+    "opencode": ">=1.17.10"
+  },
+  "packageManager": "pnpm@11.5.0"
+}
