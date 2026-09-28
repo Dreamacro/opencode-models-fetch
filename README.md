@@ -7,6 +7,7 @@ OpenCode plugin that discovers models from provider endpoints returning a models
 - Queries `/v1/models` with `User-Agent: opencode/discovery`
 - Supports custom discovery request headers
 - Projects models.dev model data into OpenCode's supported model configuration
+- Projects models.dev `reasoning_options` effort levels into OpenCode model variants
 - Supports filtering and per-model AI SDK selection through unified `include` rules
 - Filters model IDs with `include` and `exclude` regular expressions
 - Enables a persisted, provider-specific cache by default
@@ -89,6 +90,8 @@ The discovery endpoint must return an object containing a `models` map:
 Model-level `provider.npm` and `provider.api` are preserved unless a matching local `include` rule overrides them. Models without a model-level override inherit the OpenCode provider's top-level `npm` and `api` settings.
 
 OpenCode's provider model configuration is close to, but not identical to, the complete models.dev schema. The plugin keeps supported fields and removes unsupported extensions such as models.dev `experimental.modes`.
+
+OpenCode only derives reasoning-effort variants from `reasoning_options` for models loaded from models.dev, so the plugin converts `reasoning_options` of type `effort` into OpenCode `variants` (using the same provider-specific option shapes OpenCode applies, e.g. `reasoningEffort`, `effort`, or `thinkingConfig.thinkingLevel`). `toggle` and `budget_tokens` options are left to OpenCode's built-in model heuristics. Cached data written by older plugin versions does not contain `reasoning_options`; delete the cache with `/models-fetch:refresh` and restart OpenCode to pick up effort variants.
 
 ## Configuration
 

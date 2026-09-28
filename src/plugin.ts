@@ -2,7 +2,7 @@ import type { Config, Plugin, PluginInput } from '@opencode-ai/plugin'
 import { ModelCache, isFresh, type CacheIdentity } from './cache.js'
 import { parseDiscoveryConfig } from './config.js'
 import { fetchModels, normalizeBaseURL } from './discovery.js'
-import { selectModels, type ModelMap } from './model.js'
+import { applyReasoningVariants, selectModels, type ModelMap } from './model.js'
 
 export const REFRESH_COMMAND = 'models-fetch:refresh'
 
@@ -132,9 +132,10 @@ export function createModelDiscoveryPlugin(dependencies: Dependencies = {}): Plu
             const selected = selectModels(models, discovery, (pattern) => {
               log('warn', 'Ignoring invalid discovery regex', { provider: providerID, pattern })
             })
-            provider.models = { ...selected, ...configured }
-            rememberInjected(config, providerID, selected)
-            log('info', 'Injected discovered models', { provider: providerID, count: Object.keys(selected).length })
+            const projected = applyReasoningVariants(selected, provider.npm)
+            provider.models = { ...projected, ...configured }
+            rememberInjected(config, providerID, projected)
+            log('info', 'Injected discovered models', { provider: providerID, count: Object.keys(projected).length })
           }
 
           if (!discovery.cache.enabled) {

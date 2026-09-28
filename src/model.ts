@@ -1,5 +1,13 @@
 export type ModelConfig = Record<string, unknown> & { id: string }
 export type ModelMap = Record<string, ModelConfig>
+export type ModelVariants = Record<string, Record<string, unknown>>
+
+export interface ReasoningOption {
+  type: 'effort' | 'toggle' | 'budget_tokens'
+  values?: (string | null)[]
+  min?: number
+  max?: number
+}
 
 export interface ModelIncludeRule {
   match: string
@@ -32,6 +40,7 @@ const MODEL_FIELDS = [
   'provider',
   'options',
   'headers',
+  'reasoning_options',
   'variants',
 ] as const
 
@@ -99,6 +108,31 @@ function sanitizeProvider(value: unknown): Record<string, string> | undefined {
   return Object.keys(result).length > 0 ? result : undefined
 }
 
+function sanitizeReasoningOptions(value: unknown): ReasoningOption[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const options = value.flatMap<ReasoningOption>((candidate) => {
+    if (!isObject(candidate)) return []
+    if (candidate.type === 'effort') {
+      if (!Array.isArray(candidate.values)) return []
+      return [
+        {
+          type: 'effort',
+          values: candidate.values.filter((item): item is string | null => item === null || typeof item === 'string'),
+        },
+      ]
+    }
+    if (candidate.type === 'toggle') return [{ type: 'toggle' }]
+    if (candidate.type === 'budget_tokens') {
+      const option: ReasoningOption = { type: 'budget_tokens' }
+      if (finite(candidate.min)) option.min = candidate.min
+      if (finite(candidate.max)) option.max = candidate.max
+      return [option]
+    }
+    return []
+  })
+  return options.length > 0 ? options : undefined
+}
+
 function sanitizeInterleaved(value: unknown): unknown {
   if (typeof value === 'boolean' || typeof value === 'string') return value
   if (isObject(value) && typeof value.field === 'string') return { field: value.field }
@@ -120,6 +154,7 @@ function sanitizeField(field: (typeof MODEL_FIELDS)[number], value: unknown): un
   if (field === 'modalities') return sanitizeModalities(value)
   if (field === 'provider') return sanitizeProvider(value)
   if (field === 'headers') return strings(value)
+  if (field === 'reasoning_options') return sanitizeReasoningOptions(value)
   if (field === 'interleaved') return sanitizeInterleaved(value)
   if ((field === 'options' || field === 'variants') && isObject(value)) return value
   return undefined
@@ -140,6 +175,59 @@ export function sanitizeModels(value: unknown): ModelMap | undefined {
     models[key] = model as ModelConfig
   }
   return models
+}
+
+const NO_EFFORT_VARIANTS = new Set(['@ai-sdk/cohere', '@ai-sdk/perplexity', '@ai-sdk/vercel', '@ai-sdk/alibaba'])
+
+function effortVariant(npm: string | undefined, effort: string): Record<string, unknown> | undefined {
+  if (npm && NO_EFFORT_VARIANTS.has(npm)) return undefined
+  switch (npm) {
+    case '@openrouter/ai-sdk-provider':
+      return { reasoning: { effort } }
+    case '@ai-sdk/google':
+    case '@ai-sdk/google-vertex':
+      return { thinkingConfig: { includeThoughts: true, thinkingLevel: effort } }
+    case '@ai-sdk/amazon-bedrock':
+      return { reasoningConfig: { type: 'enabled', maxReasoningEffort: effort } }
+    case '@ai-sdk/anthropic':
+    case '@ai-sdk/google-vertex/anthropic':
+      return { effort }
+    default:
+      return { reasoningEffort: effort }
+  }
+}
+
+function npmFor(model: ModelConfig, fallback: string | undefined): string | undefined {
+  const provider = model.provider
+  if (isObject(provider) && typeof provider.npm === 'string' && provider.npm.length > 0) return provider.npm
+  return fallback
+}
+
+/**
+ * Mirrors OpenCode's `ProviderTransform.reasoningVariants` for effort-based
+ * `reasoning_options`. OpenCode only consumes `reasoning_options` for providers
+ * loaded from models.dev, so config-injected models must carry the resulting
+ * `variants` themselves. Toggle and budget_tokens options are left to OpenCode's
+ * built-in per-model heuristic.
+ */
+export function applyReasoningVariants(models: ModelMap, npm: string | undefined): ModelMap {
+  return Object.fromEntries(
+    Object.entries(models).map(([key, model]) => {
+      const options = sanitizeReasoningOptions(model.reasoning_options)
+      const effort = options?.find((option) => option.type === 'effort')
+      if (!effort?.values) return [key, model]
+      const derived: ModelVariants = {}
+      for (const value of effort.values) {
+        const level = value ?? 'none'
+        const body = effortVariant(npmFor(model, npm), level)
+        if (body) derived[level] = body
+      }
+      const { reasoning_options: _, ...rest } = model
+      if (Object.keys(derived).length === 0) return [key, rest]
+      const existing = isObject(rest.variants) ? (rest.variants as ModelVariants) : {}
+      return [key, { ...rest, variants: { ...existing, ...derived } }]
+    }),
+  ) as ModelMap
 }
 
 function compile(patterns: string[], onInvalid?: (pattern: string) => void): RegExp[] {

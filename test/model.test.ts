@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { sanitizeModels, selectModels } from '../src/model.js'
+import { applyReasoningVariants, sanitizeModels, selectModels } from '../src/model.js'
 
 describe('models.dev model projection', () => {
   it('keeps supported OpenCode fields and removes unsupported models.dev extensions', () => {
@@ -48,5 +48,68 @@ describe('models.dev model projection', () => {
     const models = sanitizeModels({ model: { id: 'model' } })!
     expect(selectModels(models, { include: ['['], exclude: [] }, invalid)).toEqual({})
     expect(invalid).toHaveBeenCalledWith('[')
+  })
+
+  it('keeps sanitized reasoning options for later variant projection', () => {
+    const models = sanitizeModels({
+      gpt: {
+        id: 'gpt',
+        reasoning: true,
+        reasoning_options: [
+          { type: 'effort', values: ['low', null, 5, 'max'] },
+          { type: 'budget_tokens', min: 0, max: 'nope' },
+          { type: 'unknown' },
+        ],
+      },
+    })!
+
+    expect(models.gpt.reasoning_options).toEqual([
+      { type: 'effort', values: ['low', null, 'max'] },
+      { type: 'budget_tokens', min: 0 },
+    ])
+  })
+
+  it('projects effort reasoning options into OpenCode variants', () => {
+    const models = sanitizeModels({
+      gpt: {
+        id: 'gpt',
+        provider: { npm: '@ai-sdk/openai' },
+        reasoning_options: [{ type: 'effort', values: ['low', 'high', null] }],
+      },
+      claude: { id: 'claude', reasoning_options: [{ type: 'effort', values: ['low', 'max'] }] },
+      google: {
+        id: 'google',
+        provider: { npm: '@ai-sdk/google' },
+        reasoning_options: [{ type: 'effort', values: ['high'] }],
+      },
+      toggle: { id: 'toggle', provider: { npm: '@ai-sdk/anthropic' }, reasoning_options: [{ type: 'toggle' }] },
+    })!
+
+    const projected = applyReasoningVariants(models, '@ai-sdk/anthropic')
+
+    expect(projected.gpt.variants).toEqual({
+      low: { reasoningEffort: 'low' },
+      high: { reasoningEffort: 'high' },
+      none: { reasoningEffort: 'none' },
+    })
+    expect(projected.gpt.reasoning_options).toBeUndefined()
+    expect(projected.claude.variants).toEqual({ low: { effort: 'low' }, max: { effort: 'max' } })
+    expect(projected.google.variants).toEqual({
+      high: { thinkingConfig: { includeThoughts: true, thinkingLevel: 'high' } },
+    })
+    expect(projected.toggle.variants).toBeUndefined()
+  })
+
+  it('merges projected variants over upstream variants', () => {
+    const models = sanitizeModels({
+      model: {
+        id: 'model',
+        provider: { npm: '@openrouter/ai-sdk-provider' },
+        variants: { custom: { reasoning: { effort: 'custom' } } },
+        reasoning_options: [{ type: 'effort', values: ['high'] }],
+      },
+    })!
+
+    expect(Object.keys(applyReasoningVariants(models, undefined).model.variants!)).toEqual(['custom', 'high'])
   })
 })
